@@ -1,0 +1,7 @@
+"Phrases"
+{
+    "AUTH_FAILED"
+    {
+        "en"    "Steam authentication failed. Please restart Steam and reconnect."
+    }
+}
