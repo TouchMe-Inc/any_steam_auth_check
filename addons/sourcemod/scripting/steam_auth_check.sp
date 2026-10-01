@@ -19,7 +19,6 @@ ConVar g_cvRetryTime = null;
 ConVar g_cvMaxAttempts = null;
 
 bool g_bConnectedtoSteam = false;
-bool g_bAwaitingAuth[MAXPLAYERS + 1] = { false, ... };
 
 float g_fRetryTime = 0.0;
 int g_iMaxAttempts = 0;
@@ -37,6 +36,8 @@ public void OnPluginStart()
 
     g_iMaxAttempts = GetConVarInt(g_cvMaxAttempts);
     g_fRetryTime = GetConVarFloat(g_cvRetryTime);
+
+    g_bConnectedtoSteam = SteamWorks_IsConnected();
 }
 
 public void Callback_ConvarChange(ConVar convar, const char[] oldValue, const char[] newValue)
@@ -51,35 +52,54 @@ public void Callback_ConvarChange(ConVar convar, const char[] oldValue, const ch
 
 public void OnClientPutInServer(int iClient)
 {
-    g_bAwaitingAuth[iClient] = true;
     g_iAttempts[iClient] = g_iMaxAttempts;
-    CreateTimer(g_fRetryTime, Timer_AuthCheck, GetClientUserId(iClient), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
-}
 
-public void OnClientAuthorized(int iClient, const char[] szAuthId) {
-    g_bAwaitingAuth[iClient] = false;
+    if (!IsFakeClient(iClient)) {
+        CreateTimer(10.0, Timer_AuthorizedCheck, GetClientSerial(iClient), TIMER_FLAG_NO_MAPCHANGE);
+    }
 }
 
 public void OnClientDisconnect(int iClient)
 {
-    g_bAwaitingAuth[iClient] = false;
     g_iAttempts[iClient] = 0;
 }
 
-public Action Timer_AuthCheck(Handle timer, any iUserId)
+public Action Timer_AuthorizedCheck(Handle timer, any aSerial)
 {
-    int iClient = GetClientOfUserId(iUserId);
+    int iClient = GetClientFromSerial(aSerial);
 
-    if (!iClient || !g_bAwaitingAuth[iClient] || !g_bConnectedtoSteam) {
+    if (!iClient || !IsClientConnected(iClient)) {
+        return Plugin_Stop;
+    }
+
+    if (!IsClientAuthorized(iClient))
+    {
+        KickClient(iClient, "%T", "AUTH_TIMEOUT", iClient);
+        return Plugin_Stop;
+    }
+
+    CreateTimer(g_fRetryTime, Timer_AuthCheck, GetClientSerial(iClient), TIMER_REPEAT | TIMER_FLAG_NO_MAPCHANGE);
+
+    return Plugin_Stop;
+}
+
+public Action Timer_AuthCheck(Handle timer, any aSerial)
+{
+    int iClient = GetClientFromSerial(aSerial);
+
+    if (!iClient || !IsClientConnected(iClient)) {
+        return Plugin_Stop;
+    }
+
+    if (!g_bConnectedtoSteam) {
         return Plugin_Stop;
     }
 
     char szAuth[MAX_AUTHID_LENGTH];
 
-    if (!GetClientAuthId(iClient, AuthId_Steam2, szAuth, sizeof szAuth)
-        || (StrContains(szAuth, "STEAM_ID", false) != -1))
+    if (!GetClientAuthId(iClient, AuthId_Steam2, szAuth, sizeof szAuth))
     {
-        if (--g_iAttempts[iClient] > 1)
+        if (--g_iAttempts[iClient] > 0)
         {
             LogMessage("Player %N has failed check Steam Auth. %i attempts left.", iClient, g_iAttempts[iClient]);
 
@@ -91,11 +111,11 @@ public Action Timer_AuthCheck(Handle timer, any iUserId)
             char szClientIp[16];
             GetClientIP(iClient, szClientIp, sizeof szClientIp);
 
-            KickClientEx(iClient, szReason);
-
             if (szClientIp[0] != '\0') {
                 BanIdentity(szClientIp, 1, BANFLAG_IP, szReason);
             }
+
+            KickClient(iClient, szReason);
         }
     }
 

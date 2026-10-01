@@ -1,5 +1,10 @@
 "Phrases"
 {
+    "AUTH_TIMEOUT"
+    {
+        "en"   "Authorization timeout"
+    }
+
     "AUTH_FAILED"
     {
         "en"    "Steam authentication failed. Please restart Steam and reconnect."
